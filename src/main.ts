@@ -2,12 +2,13 @@ import { readFileSync } from "fs";
 import * as core from "@actions/core";
 import OpenAI from "openai";
 import { Octokit } from "@octokit/rest";
-import parseDiff, { Chunk, File } from "parse-diff";
+import parseDiff, { Chunk, File, Change } from "parse-diff";
 import minimatch from "minimatch";
 
 const GITHUB_TOKEN: string = core.getInput("GITHUB_TOKEN");
 const OPENAI_API_KEY: string = core.getInput("OPENAI_API_KEY");
 const OPENAI_API_MODEL: string = core.getInput("OPENAI_API_MODEL");
+const MAX_FILES: number = 25;
 
 const octokit = new Octokit({ auth: GITHUB_TOKEN });
 
@@ -46,14 +47,36 @@ async function getDiff(
   repo: string,
   pull_number: number
 ): Promise<string | null> {
-  const response = await octokit.pulls.get({
-    owner,
-    repo,
-    pull_number,
-    mediaType: { format: "diff" },
-  });
-  // @ts-expect-error - response.data is a string
-  return response.data;
+  try {
+    const response = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
+      owner,
+      repo,
+      pull_number,
+      mediaType: {
+        format: 'diff',
+      },
+    });
+    return response.data as unknown as string;
+  } catch (error) {
+    console.error('Error fetching diff:', error);
+    return null;
+  }
+}
+
+function getLanguageContext(filename: string): string {
+  if (filename.endsWith('.cs')) {
+    return `This is a C# file using .NET 8 features. Consider the following when reviewing:
+- C# 12 features like primary constructors, collection expressions, and inline arrays
+- .NET 8 features including native AOT compilation considerations
+- Performance implications and best practices
+- Dependency injection patterns
+- Async/await usage
+- SOLID principles
+- Nullable reference types
+- Record types and pattern matching
+- Memory management and disposable resources`;
+  }
+  return '';
 }
 
 async function analyzeCode(
@@ -62,7 +85,16 @@ async function analyzeCode(
 ): Promise<Array<{ body: string; path: string; line: number }>> {
   const comments: Array<{ body: string; path: string; line: number }> = [];
 
-  for (const file of parsedDiff) {
+  // If there are more than MAX_FILES, only process the first MAX_FILES
+  const filesToProcess = parsedDiff.length > MAX_FILES 
+    ? parsedDiff.slice(0, MAX_FILES) 
+    : parsedDiff;
+
+  if (parsedDiff.length > MAX_FILES) {
+    console.log(`Pull request contains ${parsedDiff.length} files. Processing only the first ${MAX_FILES} files.`);
+  }
+
+  for (const file of filesToProcess) {
     if (file.to === "/dev/null") continue; // Ignore deleted files
     for (const chunk of file.chunks) {
       const prompt = createPrompt(file, chunk, prDetails);
@@ -79,6 +111,8 @@ async function analyzeCode(
 }
 
 function createPrompt(file: File, chunk: Chunk, prDetails: PRDetails): string {
+  const languageContext = getLanguageContext(file.to || '');
+  
   return `Your task is to review pull requests. Instructions:
 - Provide the response in following JSON format:  {"reviews": [{"lineNumber":  <line_number>, "reviewComment": "<review comment>"}]}
 - Do not give positive comments or compliments.
@@ -86,6 +120,8 @@ function createPrompt(file: File, chunk: Chunk, prDetails: PRDetails): string {
 - Write the comment in GitHub Markdown format.
 - Use the given description only for the overall context and only comment the code.
 - IMPORTANT: NEVER suggest adding comments to the code.
+
+${languageContext}
 
 Review the following code diff in the file "${
     file.to
@@ -103,8 +139,7 @@ Git diff to review:
 \`\`\`diff
 ${chunk.content}
 ${chunk.changes
-  // @ts-expect-error - ln and ln2 exists where needed
-  .map((c) => `${c.ln ? c.ln : c.ln2} ${c.content}`)
+  .map((c: Change) => `${c.ln ? c.ln : c.ln2} ${c.content}`)
   .join("\n")}
 \`\`\`
 `;
@@ -224,10 +259,10 @@ async function main() {
   const excludePatterns = core
     .getInput("exclude")
     .split(",")
-    .map((s) => s.trim());
+    .map((s: string) => s.trim());
 
-  const filteredDiff = parsedDiff.filter((file) => {
-    return !excludePatterns.some((pattern) =>
+  const filteredDiff = parsedDiff.filter((file: File) => {
+    return !excludePatterns.some((pattern: string) =>
       minimatch(file.to ?? "", pattern)
     );
   });
