@@ -8,8 +8,8 @@ import minimatch from "minimatch";
 const GITHUB_TOKEN: string = core.getInput("GITHUB_TOKEN");
 const OPENAI_API_KEY: string = core.getInput("OPENAI_API_KEY");
 const OPENAI_API_MODEL: string = core.getInput("OPENAI_API_MODEL");
-const MAX_FILES: number = 25;
-const MAX_TOKENS: number = 4096;
+const MAX_FILES: number = core.getInput("MAX_FILES") ? parseInt(core.getInput("MAX_FILES")) : 20;
+const MAX_TOKENS: number = core.getInput("MAX_TOKENS") ? parseInt(core.getInput("MAX_TOKENS")) : 4096;
 
 const octokit = new Octokit({ auth: GITHUB_TOKEN });
 
