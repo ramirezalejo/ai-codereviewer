@@ -9,6 +9,7 @@ const GITHUB_TOKEN: string = core.getInput("GITHUB_TOKEN");
 const OPENAI_API_KEY: string = core.getInput("OPENAI_API_KEY");
 const OPENAI_API_MODEL: string = core.getInput("OPENAI_API_MODEL");
 const MAX_FILES: number = 25;
+const MAX_TOKENS: number = 4096;
 
 const octokit = new Octokit({ auth: GITHUB_TOKEN });
 
@@ -145,14 +146,36 @@ ${chunk.changes
 `;
 }
 
+// Rough estimation of tokens (4 chars ~= 1 token)
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
 async function getAIResponse(prompt: string): Promise<Array<{
   lineNumber: string;
   reviewComment: string;
 }> | null> {
+  // Estimate prompt tokens and ensure we don't exceed model limits
+  const estimatedPromptTokens = estimateTokens(prompt);
+  const maxResponseTokens = 700;
+  
+  // If prompt is too long, truncate it while keeping essential parts
+  if (estimatedPromptTokens + maxResponseTokens > MAX_TOKENS) {
+    const allowedPromptTokens = MAX_TOKENS - maxResponseTokens;
+    const truncateAt = allowedPromptTokens * 4; // Convert back to characters
+    
+    // Keep the beginning instructions and truncate the diff part
+    const parts = prompt.split("Git diff to review:");
+    if (parts.length === 2) {
+      const truncatedDiff = parts[1].slice(-truncateAt);
+      prompt = parts[0] + "Git diff to review:" + truncatedDiff;
+    }
+  }
+
   const queryConfig = {
     model: OPENAI_API_MODEL,
     temperature: 0.2,
-    max_tokens: 700,
+    max_tokens: maxResponseTokens,
     top_p: 1,
     frequency_penalty: 0,
     presence_penalty: 0,
