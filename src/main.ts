@@ -176,7 +176,7 @@ async function getAIResponse(prompt: string): Promise<Array<{
   const queryConfig = {
     model: OPENAI_API_MODEL,
     temperature: 0.2,
-    max_tokens: maxResponseTokens,
+    max_completion_tokens: maxResponseTokens,
     top_p: 1,
     frequency_penalty: 0,
     presence_penalty: 0,
