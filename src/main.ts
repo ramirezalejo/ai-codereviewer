@@ -121,7 +121,7 @@ function createPrompt(file: File, chunk: Chunk, prDetails: PRDetails): string {
 - Write the comment in GitHub Markdown format.
 - Use the given description only for the overall context and only comment the code.
 - IMPORTANT: NEVER suggest adding comments to the code.
-- IMPORTANT: NEVER suggest "add a newline at the end of the file to follow the standard coding conventions."
+- IMPORTANT: NEVER suggest to add a newline at the end of the file to follow the standard coding conventions.
 
 ${languageContext}
 
